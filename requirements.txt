@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+SQLAlchemy
+alembic
+psycopg[binary]
+asyncpg
+aiosqlite
+passlib[bcrypt]
+PyJWT
+celery
+flower
+structlog
+pydantic[email]
+pydantic-settings
+python-dotenv
+httpx
+pytest
