@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, Button } from 'react-bootstrap'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -10,6 +11,14 @@ export function ResumeDetailPage() {
   const resumeId = id as string
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const [saving, setSaving] = useState(false)
+  const [flash, setFlash] = useState<{ type: 'success' | 'danger'; text: string } | null>(null)
+
+  useEffect(() => {
+    if (!flash) return
+    const t = setTimeout(() => setFlash(null), 2500)
+    return () => clearTimeout(t)
+  }, [flash])
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['resumes:detail', resumeId],
@@ -18,8 +27,18 @@ export function ResumeDetailPage() {
 
   const onSave = async (values: ResumeFormValues) => {
     if (!resumeId) return
-    await updateResume(resumeId, { title: values.title, content: values.content })
-    await qc.invalidateQueries({ queryKey: ['resumes:detail', resumeId] })
+    setSaving(true)
+    setFlash(null)
+    try {
+      await updateResume(resumeId, { title: values.title, content: values.content })
+      await qc.invalidateQueries({ queryKey: ['resumes:detail', resumeId] })
+      setFlash({ type: 'success', text: 'Изменения сохранены' })
+    } catch (e: any) {
+      const status = e?.response?.status
+      setFlash({ type: 'danger', text: status === 422 ? 'Проверьте поля формы' : 'Не удалось сохранить изменения' })
+    } finally {
+      setSaving(false)
+    }
   }
 
   const onDelete = async () => {
@@ -46,7 +65,16 @@ export function ResumeDetailPage() {
         </div>
       </div>
       <ImproveButton resumeId={resumeId} />
-      <ResumeForm initial={{ title: data.title, content: data.content }} onSubmit={onSave} />
+      {flash && (
+        <Alert variant={flash.type} className="mb-2">
+          {flash.text}
+        </Alert>
+      )}
+      <ResumeForm
+        initial={{ title: data.title, content: data.content }}
+        onSubmit={onSave}
+        submitting={saving}
+      />
     </div>
   )
 }

@@ -42,8 +42,9 @@ async def get_current_user(
     try:
         payload = decode_token(token)
         sub = payload.get("sub")
-        if not sub:
-            raise ValueError("missing sub")
+        ttype = payload.get("type")
+        if not sub or ttype != "access":
+            raise ValueError("invalid token claims")
     except Exception:
         logger.warning("Invalid or expired token")
         raise HTTPException(

@@ -12,6 +12,7 @@ import threading
 from datetime import datetime, timezone
 
 from celery.exceptions import SoftTimeLimitExceeded
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.celery_app.worker import celery_app
 from app.db.session import AsyncSessionLocal
@@ -68,46 +69,72 @@ def improve_resume_task(self, improvement_id: str):
 async def _improve_resume_task_async(improvement_id: str):
     """Async implementation of resume improvement pipeline.
 
-    Transitions improvement to processing, simulates work, updates resume content,
-    and persists final status (done/failed).
+    Flow:
+    - Load improvement; exit if it was deleted.
+    - Mark as processing and commit.
+    - Call mocked LLM to get improved text.
+    - Update resume content and mark improvement as done.
+    - If records were concurrently deleted, exit quietly.
     """
     async with AsyncSessionLocal() as session:
         uow = UnitOfWork(session)
         try:
+            # Load improvement; if gone, nothing to do
             imp = await uow.improvements.get_by_id(improvement_id)
             if not imp:
                 logger.warning("Improvement not found", extra={"improvement_id": improvement_id})
                 return
-            imp.status = ImprovementStatus.processing
-            imp.started_at = datetime.now(tz=timezone.utc)
-            await uow.session.flush()
-            await uow.commit()
-            await uow.session.refresh(imp)
 
-            # Simulate long-running task
-            await asyncio.sleep(15)
-
-            resume = await uow.resumes.get_by_id(str(imp.resume_id))
-            if not resume:
-                imp.status = ImprovementStatus.failed
-                imp.error = "Resume not found"
-                imp.finished_at = datetime.now(tz=timezone.utc)
+            # Mark as processing
+            try:
+                imp.status = ImprovementStatus.processing
+                imp.started_at = datetime.now(tz=timezone.utc)
+                await uow.session.flush()
                 await uow.commit()
-                logger.warning(
-                    "Resume not found for improvement",
-                    extra={"improvement_id": improvement_id, "resume_id": str(imp.resume_id)},
+            except StaleDataError:
+                await uow.rollback()
+                logger.info(
+                    "Improvement gone before processing",
+                    extra={"improvement_id": improvement_id},
                 )
                 return
 
-            new_content = f"{imp.old_content} [Improved]"
+            # Mocked LLM call (sleep + echo with [Improved])
+            new_content = await _mock_llm_improve(imp.old_content)
 
-            imp.new_content = new_content
-            imp.status = ImprovementStatus.done
-            imp.applied = True
-            imp.finished_at = datetime.now(tz=timezone.utc)
-            resume.content = new_content
-            await uow.session.flush()
-            await uow.commit()
+            # Finalize: if resume or improvement disappeared, exit quietly
+            imp = await uow.improvements.get_by_id(improvement_id)
+            if not imp:
+                logger.info(
+                    "Improvement deleted during processing",
+                    extra={"improvement_id": improvement_id},
+                )
+                return
+
+            resume = await uow.resumes.get_by_id(str(imp.resume_id))
+            if not resume:
+                logger.info(
+                    "Resume deleted; skipping apply",
+                    extra={"improvement_id": improvement_id},
+                )
+                return
+
+            try:
+                imp.new_content = new_content
+                imp.status = ImprovementStatus.done
+                imp.applied = True
+                imp.finished_at = datetime.now(tz=timezone.utc)
+                resume.content = new_content
+                await uow.session.flush()
+                await uow.commit()
+            except StaleDataError:
+                await uow.rollback()
+                logger.info(
+                    "Record removed before finalize",
+                    extra={"improvement_id": improvement_id},
+                )
+                return
+
             logger.info(
                 "Improvement applied",
                 extra={
@@ -126,6 +153,15 @@ async def _improve_resume_task_async(improvement_id: str):
             await uow.rollback()
             logger.exception("Error during improvement", extra={"improvement_id": improvement_id})
             raise
+
+
+async def _mock_llm_improve(text: str, delay_seconds: float = 3.0) -> str:
+    """Mock LLM call: wait `delay_seconds` and return improved text.
+
+    Keeps task structure stable for easy future swap to a real client.
+    """
+    await asyncio.sleep(delay_seconds)
+    return f"{text} [Improved]"
 
 
 async def _mark_improvement_failed(improvement_id: str, error: str):

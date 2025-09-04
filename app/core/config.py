@@ -23,16 +23,17 @@ class Settings(BaseSettings):
         extra="ignore",  # ignore unknown env vars (e.g., compose-only vars)
     )
 
-    DATABASE_URL: str = Field(default="sqlite+aiosqlite:///./app.db")
+    # Required runtime configuration — no insecure defaults
+    DATABASE_URL: str
     SYNC_DATABASE_URL: str | None = Field(default=None)
-    JWT_SECRET: str = Field(default="change_me")
+    JWT_SECRET: str
     ACCESS_TOKEN_TTL: int = Field(default=3600, ge=300, le=24 * 3600)
     # Messaging (RabbitMQ)
-    RABBITMQ_URL: str = Field(default="amqp://guest:guest@rabbitmq:5672//")
+    RABBITMQ_URL: str
     # Optional: prevent duplicate improvements for same resume/content
     IMPROVEMENT_DEDUP_ENABLED: bool = Field(default=True)
     LOG_LEVEL: str = Field(default="INFO")
-    CORS_ORIGINS: List[str] = Field(default_factory=lambda: ["*"])
+    CORS_ORIGINS: List[str]
 
     # Celery/testing
     CELERY_TASK_ALWAYS_EAGER: bool = Field(default=False)

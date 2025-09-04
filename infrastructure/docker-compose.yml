@@ -1,0 +1,116 @@
+services:
+  frontend:
+    build:
+      context: ..
+      dockerfile: infrastructure/frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+        VITE_AUTH_STORAGE: ${VITE_AUTH_STORAGE:-local}
+        VITE_POLL_INTERVAL_MS: ${VITE_POLL_INTERVAL_MS:-1000}
+        VITE_POLL_TIMEOUT_MS: ${VITE_POLL_TIMEOUT_MS:-60000}
+    restart: "no"
+    volumes:
+      - frontend_dist:/dist
+    networks:
+      - internal
+
+  nginx:
+    build:
+      context: ..
+      dockerfile: infrastructure/nginx/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_started
+      frontend:
+        condition: service_completed_successfully
+    volumes:
+      - frontend_dist:/usr/share/nginx/html:ro
+    networks:
+      - public
+      - internal
+
+  api:
+    build:
+      context: ..
+      dockerfile: infrastructure/api/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*"]
+    networks:
+      - internal
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infrastructure/api/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: ["celery", "-A", "app.celery_app.worker:celery_app", "worker", "-l", "info"]
+    networks:
+      - internal
+
+  flower:
+    build:
+      context: ..
+      dockerfile: infrastructure/api/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    command: ["celery", "-A", "app.celery_app.worker:celery_app", "flower", "--port=5555"]
+    networks:
+      - internal
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+volumes:
+  pgdata: {}
+  frontend_dist: {}
+
+networks:
+  public:
+    driver: bridge
+  internal:
+    driver: bridge
+    internal: true

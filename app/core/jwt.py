@@ -24,4 +24,9 @@ def create_access_token(subject: str, expires_in: Optional[int] = None) -> str:
 
 
 def decode_token(token: str) -> Dict[str, Any]:
-    return jwt.decode(token, settings.JWT_SECRET, algorithms=[ALGORITHM])
+    return jwt.decode(
+        token,
+        settings.JWT_SECRET,
+        algorithms=[ALGORITHM],
+        options={"require": ["exp", "iat", "sub"]},
+    )

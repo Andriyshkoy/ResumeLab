@@ -21,4 +21,12 @@ class Resume(Base):
 
     user = relationship("User", backref="resumes")
 
+    # Children improvements; rely solely on DB ON DELETE CASCADE.
+    # passive_deletes=True prevents ORM from emitting UPDATE resume_id=NULL.
+    improvements = relationship(
+        "ResumeImprovement",
+        back_populates="resume",
+        passive_deletes=True,
+    )
+
     __table_args__ = (Index("ix_resume_user_created", "user_id", "created_at"),)

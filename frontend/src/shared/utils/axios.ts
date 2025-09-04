@@ -2,7 +2,8 @@ import axios from 'axios'
 import { getToken, clearAuth } from '../../features/auth/auth.store'
 import { newRequestId } from './requestId'
 
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+// Default to same-origin API via Nginx proxy in production
+const baseURL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api'
 
 export const api = axios.create({ baseURL })
 
@@ -33,4 +34,3 @@ api.interceptors.response.use(
 export type ApiError = {
   error?: { code?: string; message?: string }
 }
-

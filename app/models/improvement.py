@@ -34,7 +34,9 @@ class ResumeImprovement(Base):
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
 
-    resume = relationship("Resume", backref="improvements")
+    # Use explicit back_populates and rely on DB-level ON DELETE CASCADE.
+    # passive_deletes is configured on the parent side (Resume.improvements).
+    resume = relationship("Resume", back_populates="improvements")
 
     __table_args__ = (
         Index("ix_improvements_resume_created", "resume_id", "created_at"),
