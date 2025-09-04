@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/readme/resumelab_logo_readme.png" alt="ResumeLab Logo" width="420" />
+</p>
+
 # ResumeLab — генератор и улучшатель резюме
 
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
